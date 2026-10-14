@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import Optional
 
+from fastapi.responses import HTMLResponse
+from page import PAGE
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (Column, DateTime, Float, ForeignKey, Integer, String,
@@ -113,6 +116,10 @@ class HeatDetail(HeatOut):
 
 # ---------- API ----------
 app = FastAPI(title="Heat Records API")
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def home():
+    return PAGE
 
 
 def find_heat(db: Session, heat_no: str) -> Heat:

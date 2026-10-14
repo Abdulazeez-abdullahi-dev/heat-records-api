@@ -9,7 +9,7 @@ from main import app
 
 def open_browser():
     time.sleep(1.5)
-    webbrowser.open("http://127.0.0.1:8000/docs")
+    webbrowser.open("http://127.0.0.1:8000/")
 
 
 if __name__ == "__main__":

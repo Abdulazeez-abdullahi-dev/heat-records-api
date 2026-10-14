@@ -1,6 +1,8 @@
 # Heat Records API
 
-A REST API for storing and querying steelmaking heat records (EAF and LRF), built with Python, FastAPI and SQLite. It is also packaged as a downloadable Windows app.
+A REST API for storing and querying steelmaking heat records (EAF and LRF), built with Python, FastAPI and SQLite. It has a simple web page for browsing and adding heats, and is packaged as a downloadable Windows app.
+
+![Heat Records web page](screenshot.png)
 
 All data in this repository is **made up** for demonstration. It contains no real plant records.
 
@@ -16,17 +18,18 @@ The API stores heats (one batch of steel) and the events recorded during each he
 - Input validation, e.g. tap temperature must be between 1400 and 1800 °C
 - Duplicate heat numbers are rejected (409 Conflict)
 - Summary endpoint: number of heats and average tap temperature per grade
+- Web page at `/` with a summary by grade, a filterable heat table, and a form to add heats (API errors are shown on the page)
 - Interactive documentation at `/docs`
-- Packaged as a Windows app (`HeatRecordsAPI.exe`) that starts the API and opens the docs page
+- Packaged as a Windows app (`HeatRecordsAPI.exe`) that starts the server and opens the web page
 
 ## Download and run (Windows)
 
 1. Download `HeatRecordsAPI.exe` from the [Releases](../../releases) page.
 2. Double-click it. The first start can take up to 30 seconds.
 3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. This warning appears for any app that is not code-signed.
-4. A black window opens (this is the server, keep it open) and your browser opens the docs page at http://127.0.0.1:8000/docs.
+4. A black window opens (this is the server, keep it open) and your browser opens the web page at http://127.0.0.1:8000/. The API documentation is at http://127.0.0.1:8000/docs.
 
-The app starts with an empty database. Use `POST /heats` to add heats. Close the black window to stop it.
+The app starts with an empty database. Add heats with the form on the page. Close the black window to stop it.
 
 ## Run from source
 
@@ -42,7 +45,7 @@ python import_csv.py sample_heats.csv
 uvicorn main:app --reload
 ```
 
-Then open http://127.0.0.1:8000/docs and try the endpoints.
+Then open http://127.0.0.1:8000/ for the web page, or http://127.0.0.1:8000/docs to try the endpoints.
 
 To build the app yourself:
 
@@ -57,6 +60,7 @@ The result is `dist\HeatRecordsAPI.exe`.
 
 | Method | Path | Purpose |
 |---|---|---|
+| GET | / | Web page |
 | GET | /heats | List heats (filters: furnace, grade, date_from, date_to) |
 | GET | /heats/{heat_no} | One heat with its events |
 | POST | /heats | Create a heat |
@@ -78,10 +82,9 @@ The result is `dist\HeatRecordsAPI.exe`.
 
 ## What I learned
 
-I built this as a beginner, working through it step by step. I learned how an API turns a request into a database query, how POST and PATCH differ, and how status codes (200, 201, 404, 409, 422) describe what happened. I added my own fields with validation limits, wrote a summary endpoint and checked it against a hand calculation, published the project with Git and GitHub, and packaged it as a Windows app with PyInstaller.
+I built this as a beginner, working through it step by step. I learned how an API turns a request into a database query, how POST and PATCH differ, and how status codes (200, 201, 404, 409, 422) describe what happened. I added my own fields with validation limits, wrote a summary endpoint and checked it against a hand calculation, published the project with Git and GitHub, built a web page for it with plain HTML and JavaScript, and packaged it as a Windows app with PyInstaller.
 
 ## Possible next steps
 
-- Add a simple web page for browsing heats
 - Add API-key authentication
 - Move from SQLite to PostgreSQL
