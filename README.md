@@ -1,6 +1,6 @@
 # Heat Records API
 
-A REST API for storing and querying steelmaking heat records (EAF and LRF), built with Python, FastAPI and SQLite.
+A REST API for storing and querying steelmaking heat records (EAF and LRF), built with Python, FastAPI and SQLite. It is also packaged as a downloadable Windows app.
 
 All data in this repository is **made up** for demonstration. It contains no real plant records.
 
@@ -17,8 +17,18 @@ The API stores heats (one batch of steel) and the events recorded during each he
 - Duplicate heat numbers are rejected (409 Conflict)
 - Summary endpoint: number of heats and average tap temperature per grade
 - Interactive documentation at `/docs`
+- Packaged as a Windows app (`HeatRecordsAPI.exe`) that starts the API and opens the docs page
 
-## How to run it
+## Download and run (Windows)
+
+1. Download `HeatRecordsAPI.exe` from the [Releases](../../releases) page.
+2. Double-click it. The first start can take up to 30 seconds.
+3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. This warning appears for any app that is not code-signed.
+4. A black window opens (this is the server, keep it open) and your browser opens the docs page at http://127.0.0.1:8000/docs.
+
+The app starts with an empty database. Use `POST /heats` to add heats. Close the black window to stop it.
+
+## Run from source
 
 Requires Python 3.10 or newer. Commands are for Windows PowerShell.
 
@@ -33,6 +43,15 @@ uvicorn main:app --reload
 ```
 
 Then open http://127.0.0.1:8000/docs and try the endpoints.
+
+To build the app yourself:
+
+```
+pip install pyinstaller
+pyinstaller --onefile --name HeatRecordsAPI --collect-submodules uvicorn launcher.py
+```
+
+The result is `dist\HeatRecordsAPI.exe`.
 
 ## Endpoints
 
@@ -59,11 +78,10 @@ Then open http://127.0.0.1:8000/docs and try the endpoints.
 
 ## What I learned
 
-I built this as a beginner, working through it step by step. I learned how an API turns a request into a database query, how POST and PATCH differ, and how status codes (200, 201, 404, 409, 422) describe what happened. I added my own fields with validation limits, wrote a summary endpoint and checked it against a hand calculation, and published the project with Git and GitHub.
+I built this as a beginner, working through it step by step. I learned how an API turns a request into a database query, how POST and PATCH differ, and how status codes (200, 201, 404, 409, 422) describe what happened. I added my own fields with validation limits, wrote a summary endpoint and checked it against a hand calculation, published the project with Git and GitHub, and packaged it as a Windows app with PyInstaller.
 
 ## Possible next steps
 
-- Package as a downloadable Windows app
 - Add a simple web page for browsing heats
 - Add API-key authentication
 - Move from SQLite to PostgreSQL
