@@ -4,3 +4,4 @@ heats.db
 build/
 dist/
 *.spec
+api_key.txt

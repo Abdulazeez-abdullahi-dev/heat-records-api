@@ -1,15 +1,22 @@
 from datetime import datetime
 from typing import Optional
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from page import PAGE
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Security
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import (Column, DateTime, Float, ForeignKey, Integer, String,
                         create_engine)
 from sqlalchemy.orm import Session, declarative_base, relationship, sessionmaker
 from sqlalchemy import func
+
+import csv
+import io
+
+import os
+import secrets
 
 # ---------- Database ----------
 engine = create_engine("sqlite:///heats.db", connect_args={"check_same_thread": False})
@@ -134,7 +141,37 @@ class HeatDetail(HeatOut):
 
 
 # ---------- API ----------
-app = FastAPI(title="Heat Records API")
+KEY_FILE = "api_key.txt"
+
+
+def load_api_key():
+    from_env = os.environ.get("HEAT_API_KEY", "").strip()
+    if from_env:
+        return from_env
+    if os.path.exists(KEY_FILE):
+        with open(KEY_FILE, encoding="utf-8") as f:
+            saved = f.read().strip()
+        if saved:
+            return saved
+    new_key = secrets.token_urlsafe(24)
+    with open(KEY_FILE, "w", encoding="utf-8") as f:
+        f.write(new_key)
+    print("A new API key was saved in", os.path.abspath(KEY_FILE))
+    return new_key
+
+
+API_KEY = load_api_key()
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def require_key(request: Request, key: Optional[str] = Security(api_key_header)):
+    if request.url.path == "/":
+        return
+    if not key or not secrets.compare_digest(key.encode(), API_KEY.encode()):
+        raise HTTPException(401, "Missing or wrong API key")
+
+
+app = FastAPI(title="Heat Records API", dependencies=[Depends(require_key)])
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def home():
@@ -245,3 +282,57 @@ def summary(db: Session = Depends(get_db)):
         }
         for g, n, t, w, p, c, o, l in rows
     ]
+
+@app.get("/export.csv")
+def export_csv(
+    furnace: Optional[str] = None,
+    grade: Optional[str] = None,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    db: Session = Depends(get_db),
+):
+    q = db.query(Heat)
+    if furnace:
+        q = q.filter(Heat.furnace == furnace)
+    if grade:
+        q = q.filter(Heat.grade == grade)
+    if date_from:
+        q = q.filter(Heat.start_time >= date_from)
+    if date_to:
+        q = q.filter(Heat.start_time <= date_to)
+    heats = q.order_by(Heat.start_time.asc()).all()
+
+    columns = [
+        "heat_no", "furnace", "grade", "shift", "start_time", "end_time",
+        "tap_temp", "tap_weight_t", "power_kwh", "oxygen_nm3", "carbon_kg",
+        "lime_kg", "electrode_kg",
+    ]
+    per_tonne = [
+        ("power_kwh_per_t", "power_kwh"),
+        ("carbon_kg_per_t", "carbon_kg"),
+        ("oxygen_nm3_per_t", "oxygen_nm3"),
+        ("lime_kg_per_t", "lime_kg"),
+    ]
+
+    def safe(value):
+        # stop Excel from treating text that starts with = + - @ as a formula
+        if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+            return "'" + value
+        return value
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(columns + [name for name, _ in per_tonne])
+    for h in heats:
+        row = [safe(getattr(h, c)) for c in columns]
+        for _, field in per_tonne:
+            value = getattr(h, field)
+            weight = h.tap_weight_t
+            row.append(round(value / weight, 2) if value is not None and weight and weight > 0 else None)
+        writer.writerow(row)
+
+    return Response(
+        content="\ufeff" + out.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="heats.csv"'},
+    )

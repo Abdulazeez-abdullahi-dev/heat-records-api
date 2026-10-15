@@ -5,8 +5,8 @@ PAGE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Heat Records</title>
 <style>
-:root{--bg:#f6f7f9;--card:#ffffff;--text:#1d2530;--muted:#6a7584;--line:#dde2e8;--accent:#c2410c;--ok:#15803d;--bad:#b91c1c}
-@media (prefers-color-scheme:dark){:root{--bg:#14181d;--card:#1d232b;--text:#e8ecf1;--muted:#97a3b3;--line:#2d3641;--accent:#fb923c;--ok:#4ade80;--bad:#f87171}}
+:root{--bg:#f6f7f9;--card:#ffffff;--text:#1d2530;--muted:#6a7584;--line:#dde2e8;--accent:#c2410c;--accent2:#2563eb;--ok:#15803d;--bad:#b91c1c}
+@media (prefers-color-scheme:dark){:root{--bg:#14181d;--card:#1d232b;--text:#e8ecf1;--muted:#97a3b3;--line:#2d3641;--accent:#fb923c;--accent2:#60a5fa;--ok:#4ade80;--bad:#f87171}}
 *{box-sizing:border-box}
 body{margin:0;font-family:system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.4}
 main{max-width:1000px;margin:0 auto;padding:20px 16px 48px}
@@ -25,7 +25,7 @@ label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted);gap
 input,select,button{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
 button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
 .scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:940px}
+table{border-collapse:collapse;width:100%;min-width:1400px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:.92rem}
 th{color:var(--muted);font-weight:600}
 .msg{margin-top:10px;min-height:1.2em}
@@ -37,6 +37,13 @@ th{color:var(--muted);font-weight:600}
 .tick{fill:var(--muted);font-size:12px}
 .line{fill:none;stroke:var(--accent);stroke-width:2}
 .dot{fill:var(--accent)}
+.line2{fill:none;stroke:var(--accent2);stroke-width:2}
+.dot2{fill:var(--accent2)}
+.legend{display:flex;gap:16px;font-size:.85rem;color:var(--muted);margin-bottom:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+.group{color:var(--muted);font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 2px}
+table.totals{min-width:520px}
+input[type=checkbox]{padding:0;width:18px;height:18px}
 .note{color:var(--muted);font-size:.85rem;margin:0 0 8px}
 </style>
 </head>
@@ -44,6 +51,22 @@ th{color:var(--muted);font-weight:600}
 <main>
 <h1>Heat Records</h1>
 <p class="sub">Sample data only. API docs are at <a href="/docs">/docs</a>.</p>
+
+<section class="card" id="login" style="display:none">
+<h2>API key</h2>
+<p class="note">Enter the API key saved in api_key.txt, in the folder where the app runs.</p>
+<form id="login-form">
+<div class="row">
+<label>Key<input id="key-input" type="password" autocomplete="off"></label>
+<label style="flex-direction:row;align-items:center;gap:6px"><input id="key-remember" type="checkbox"> Remember on this computer</label>
+<button type="submit">Unlock</button>
+</div>
+</form>
+<div class="msg bad" id="login-msg"></div>
+</section>
+
+<div id="app" style="display:none">
+<div style="text-align:right;margin-bottom:8px"><button id="lock" type="button" style="background:transparent;color:var(--text);border-color:var(--line)">Lock</button></div>
 
 <section class="card">
 <h2>Summary by grade</h2>
@@ -60,10 +83,11 @@ th{color:var(--muted);font-weight:600}
 <input id="f-grade" placeholder="e.g. SAE1018">
 </label>
 <button id="apply" type="button">Filter</button>
+<button id="export" type="button" style="background:transparent;color:var(--text);border-color:var(--line)">Download CSV</button>
 </div>
 <div class="scroll" style="margin-top:12px">
 <table>
-<thead><tr><th>Heat no</th><th>Furnace</th><th>Grade</th><th>Shift</th><th>Start</th><th>Tap temp</th><th>Size (t)</th><th>Power kWh</th><th>Oxygen Nm&sup3;</th><th>Lime kg</th><th>Carbon kg</th><th></th></tr></thead>
+<thead><tr><th><input type="checkbox" id="select-all" title="Tick all shown heats"></th><th>Heat no</th><th>Furnace</th><th>Grade</th><th>Shift</th><th>Start</th><th>Tap temp</th><th>Size (t)</th><th>Power kWh</th><th>Oxygen Nm&sup3;</th><th>Lime kg</th><th>Carbon kg</th><th>kWh/t</th><th>Carbon kg/t</th><th>Oxygen Nm&sup3;/t</th><th>Lime kg/t</th><th></th></tr></thead>
 <tbody id="rows"></tbody>
 </table>
 </div>
@@ -71,8 +95,19 @@ th{color:var(--muted);font-weight:600}
 </section>
 
 <section class="card">
+<h2>Totals and per tonne</h2>
+<p class="note" id="totals-note"></p>
+<div class="scroll">
+<table class="totals">
+<thead><tr><th>Parameter</th><th>Total</th><th>Per tonne</th><th>Heats counted</th></tr></thead>
+<tbody id="totals"></tbody>
+</table>
+</div>
+</section>
+
+<section class="card">
 <h2>Tap temperature by heat</h2>
-<p class="note">Follows the furnace and grade filter above. Hover over a dot to see the heat.</p>
+<p class="note">Follows the furnace and grade filter above. EAF and LRF are drawn as separate lines. Hover over a dot to see the heat.</p>
 <div id="chart"></div>
 </section>
 
@@ -120,10 +155,51 @@ th{color:var(--muted);font-weight:600}
 </form>
 <div class="msg" id="smsg"></div>
 </section>
+</div>
 </main>
 
 <script>
 const $ = id => document.getElementById(id);
+
+const KEY_NAME = "heatApiKey";
+
+function getKey() {
+  return sessionStorage.getItem(KEY_NAME) || localStorage.getItem(KEY_NAME) || "";
+}
+
+function storeKey(key, remember) {
+  sessionStorage.removeItem(KEY_NAME);
+  localStorage.removeItem(KEY_NAME);
+  (remember ? localStorage : sessionStorage).setItem(KEY_NAME, key);
+}
+
+function clearKey() {
+  sessionStorage.removeItem(KEY_NAME);
+  localStorage.removeItem(KEY_NAME);
+}
+
+function showLogin(message) {
+  $("login").style.display = "";
+  $("app").style.display = "none";
+  $("login-msg").textContent = message || "";
+}
+
+function showApp() {
+  $("login").style.display = "none";
+  $("app").style.display = "";
+}
+
+async function api(url, options) {
+  const opts = Object.assign({}, options);
+  opts.headers = Object.assign({}, opts.headers, { "X-API-Key": getKey() });
+  const hadKey = getKey() !== "";
+  const res = await fetch(url, opts);
+  if (res.status === 401) {
+    clearKey();
+    showLogin(hadKey ? "That key was not accepted. Try again." : "Enter the API key to continue.");
+  }
+  return res;
+}
 
 function cell(value) {
   const td = document.createElement("td");
@@ -131,18 +207,104 @@ function cell(value) {
   return td;
 }
 
-async function loadHeats() {
+let currentHeats = [];
+let rowBoxes = [];
+const selected = new Set();
+const TOTAL_FIELDS = [
+  ["power_kwh", "Power", "kWh"],
+  ["oxygen_nm3", "Oxygen", "Nm\u00b3"],
+  ["carbon_kg", "Carbon injection", "kg"],
+  ["lime_kg", "Lime", "kg"]
+];
+
+function fmt(value, digits) {
+  const f = Math.pow(10, digits);
+  return String(Math.round(value * f) / f);
+}
+
+function sumOf(list, getter) {
+  return list.reduce((acc, h) => acc + getter(h), 0);
+}
+
+function addTotalRow(body, name, total, perTonne, counted) {
+  const tr = document.createElement("tr");
+  [name, total, perTonne, counted].forEach(v => tr.appendChild(cell(v)));
+  body.appendChild(tr);
+}
+
+function plural(n, word) {
+  return n + " " + word + (n === 1 ? "" : "s");
+}
+
+function renderTotals() {
+  const picked = selected.size > 0;
+  const chosen = picked ? currentHeats.filter(h => selected.has(h.heat_no)) : currentHeats;
+  const body = $("totals");
+  body.replaceChildren();
+  if (chosen.length === 0) {
+    $("totals-note").textContent = "No heats to calculate.";
+    return;
+  }
+  $("totals-note").textContent = picked
+    ? "Calculated for the " + plural(chosen.length, "heat") + " you ticked. Per tonne = total \u00f7 total heat size, using only heats that have both values."
+    : "Calculated for all " + plural(chosen.length, "heat") + " shown. Tick heats in the table to calculate for just those. Per tonne = total \u00f7 total heat size, using only heats that have both values.";
+  const sized = chosen.filter(h => h.tap_weight_t != null);
+  addTotalRow(body, "Heat size",
+    sized.length ? fmt(sumOf(sized, h => h.tap_weight_t), 1) + " t" : "n/a",
+    "", sized.length + " of " + chosen.length);
+  TOTAL_FIELDS.forEach(f => {
+    const key = f[0];
+    const have = chosen.filter(h => h[key] != null);
+    const both = have.filter(h => h.tap_weight_t != null && h.tap_weight_t > 0);
+    const tonnes = sumOf(both, h => h.tap_weight_t);
+    const used = sumOf(both, h => h[key]);
+    addTotalRow(body, f[1],
+      have.length ? fmt(sumOf(have, h => h[key]), 1) + " " + f[2] : "n/a",
+      both.length ? fmt(used / tonnes, 2) + " " + f[2] + "/t" : "n/a",
+      both.length + " of " + chosen.length);
+  });
+}
+
+function updateSelectAll() {
+  $("select-all").checked = currentHeats.length > 0 && currentHeats.every(h => selected.has(h.heat_no));
+}
+
+function perTonne(h, field) {
+  if (h[field] == null || h.tap_weight_t == null || h.tap_weight_t <= 0) return null;
+  return Math.round(h[field] / h.tap_weight_t * 100) / 100;
+}
+
+function filterParams() {
   const params = new URLSearchParams();
   if ($("f-furnace").value) params.set("furnace", $("f-furnace").value);
   if ($("f-grade").value.trim()) params.set("grade", $("f-grade").value.trim());
-  const res = await fetch("/heats?" + params.toString());
+  return params;
+}
+
+async function loadHeats() {
+  const res = await api("/heats?" + filterParams().toString());
+  if (!res.ok) return;
   const heats = await res.json();
   const body = $("rows");
   body.replaceChildren();
+  rowBoxes = [];
   heats.forEach(h => {
     const tr = document.createElement("tr");
+    const boxCell = document.createElement("td");
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = selected.has(h.heat_no);
+    box.addEventListener("change", () => {
+      if (box.checked) selected.add(h.heat_no); else selected.delete(h.heat_no);
+      updateSelectAll();
+      renderTotals();
+    });
+    rowBoxes.push([h.heat_no, box]);
+    boxCell.appendChild(box);
+    tr.appendChild(boxCell);
     const start = h.start_time ? h.start_time.replace("T", " ") : "";
-    [h.heat_no, h.furnace, h.grade, h.shift, start, h.tap_temp, h.tap_weight_t, h.power_kwh, h.oxygen_nm3, h.lime_kg, h.carbon_kg]
+    [h.heat_no, h.furnace, h.grade, h.shift, start, h.tap_temp, h.tap_weight_t, h.power_kwh, h.oxygen_nm3, h.lime_kg, h.carbon_kg,
+     perTonne(h, "power_kwh"), perTonne(h, "carbon_kg"), perTonne(h, "oxygen_nm3"), perTonne(h, "lime_kg")]
       .forEach(v => tr.appendChild(cell(v)));
     const editCell = document.createElement("td");
     const editBtn = document.createElement("button");
@@ -154,6 +316,12 @@ async function loadHeats() {
     body.appendChild(tr);
   });
   $("count").textContent = heats.length + (heats.length === 1 ? " heat" : " heats");
+  currentHeats = heats;
+  Array.from(selected).forEach(n => {
+    if (!heats.some(h => h.heat_no === n)) selected.delete(n);
+  });
+  updateSelectAll();
+  renderTotals();
   drawChart(heats);
 }
 
@@ -197,32 +365,81 @@ function drawChart(heats) {
     svg.appendChild(svgEl("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }));
     svg.appendChild(svgEl("text", { x: L - 8, y: yy + 4, class: "tick", "text-anchor": "end" }, Math.round(v)));
   }
-  const d = pts.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + " " + y(p.tap_temp).toFixed(1)).join(" ");
-  svg.appendChild(svgEl("path", { d: d, class: "line" }));
+  const present = [];
+  [["EAF", "line", "dot"], ["LRF", "line2", "dot2"]].forEach(sr => {
+    const idx = [];
+    pts.forEach((p, i) => { if (p.furnace === sr[0]) idx.push(i); });
+    if (idx.length === 0) return;
+    present.push(sr[0]);
+    if (idx.length > 1) {
+      const d = idx.map((i, k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + y(pts[i].tap_temp).toFixed(1)).join(" ");
+      svg.appendChild(svgEl("path", { d: d, class: sr[1] }));
+    }
+    idx.forEach(i => {
+      const dot = svgEl("circle", { cx: x(i), cy: y(pts[i].tap_temp), r: 4, class: sr[2] });
+      dot.appendChild(svgEl("title", {}, pts[i].heat_no + " (" + sr[0] + "): " + pts[i].tap_temp + " \u00b0C"));
+      svg.appendChild(dot);
+    });
+  });
   const step = Math.ceil(pts.length / 10);
   pts.forEach((p, i) => {
-    const dot = svgEl("circle", { cx: x(i), cy: y(p.tap_temp), r: 4, class: "dot" });
-    dot.appendChild(svgEl("title", {}, p.heat_no + ": " + p.tap_temp + " \u00b0C"));
-    svg.appendChild(dot);
     if (i % step === 0) {
       svg.appendChild(svgEl("text", { x: x(i), y: H - B + 18, class: "tick", "text-anchor": "middle" }, p.heat_no));
     }
   });
   svg.appendChild(svgEl("text", { x: 14, y: H / 2, class: "tick", "text-anchor": "middle", transform: "rotate(-90 14 " + (H / 2) + ")" }, "Tap temp (\u00b0C)"));
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  present.forEach(name => {
+    const item = document.createElement("span");
+    const swatch = document.createElement("i");
+    swatch.style.background = name === "EAF" ? "var(--accent)" : "var(--accent2)";
+    item.append(swatch, name);
+    legend.appendChild(item);
+  });
+  box.appendChild(legend);
   box.appendChild(svg);
 }
 
-const METRICS = [
-  ["avg_tap_temp", "Avg tap temp", " \u00b0C"],
-  ["avg_heat_size_t", "Avg heat size", " t"],
-  ["avg_power_kwh", "Avg power", " kWh"],
-  ["avg_carbon_kg", "Avg carbon injection", " kg"],
-  ["avg_oxygen_nm3", "Avg oxygen", " Nm\u00b3"],
-  ["avg_lime_kg", "Avg lime", " kg"]
+const AVERAGES = [
+  ["avg_tap_temp", "Tap temp", " \u00b0C"],
+  ["avg_heat_size_t", "Heat size", " t"],
+  ["avg_power_kwh", "Power", " kWh"],
+  ["avg_carbon_kg", "Carbon injection", " kg"],
+  ["avg_oxygen_nm3", "Oxygen", " Nm\u00b3"],
+  ["avg_lime_kg", "Lime", " kg"]
 ];
 
+const PER_TONNE = [
+  ["power_kwh_per_t", "Power", " kWh/t"],
+  ["carbon_kg_per_t", "Carbon injection", " kg/t"],
+  ["oxygen_nm3_per_t", "Oxygen", " Nm\u00b3/t"],
+  ["lime_kg_per_t", "Lime", " kg/t"]
+];
+
+function addGroup(card, title) {
+  const g = document.createElement("div");
+  g.className = "group";
+  g.textContent = title;
+  card.appendChild(g);
+}
+
+function addRows(card, s, list) {
+  list.forEach(m => {
+    const row = document.createElement("div");
+    row.className = "metric";
+    const label = document.createElement("span");
+    label.textContent = m[1];
+    const value = document.createElement("span");
+    value.textContent = s[m[0]] == null ? "n/a" : s[m[0]] + m[2];
+    row.append(label, value);
+    card.appendChild(row);
+  });
+}
+
 async function loadSummary() {
-  const res = await fetch("/summary");
+  const res = await api("/summary");
+  if (!res.ok) return;
   const data = await res.json();
   const box = $("summary");
   box.replaceChildren();
@@ -239,16 +456,11 @@ async function loadSummary() {
     heats.className = "heats";
     heats.textContent = s.heats + (s.heats === 1 ? " heat" : " heats");
     card.append(name, heats);
-    METRICS.forEach(m => {
-      const row = document.createElement("div");
-      row.className = "metric";
-      const label = document.createElement("span");
-      label.textContent = m[1];
-      const value = document.createElement("span");
-      value.textContent = s[m[0]] == null ? "n/a" : s[m[0]] + m[2];
-      row.append(label, value);
-      card.appendChild(row);
-    });
+    addRows(card, s, [["total_heat_size_t", "Total heat size", " t"]]);
+    addGroup(card, "Average per heat");
+    addRows(card, s, AVERAGES);
+    addGroup(card, "Per tonne of steel");
+    addRows(card, s, PER_TONNE);
     box.appendChild(card);
   });
 }
@@ -281,7 +493,7 @@ function addNumbers(body, pairs) {
 }
 
 async function postJson(url, body) {
-  return fetch(url, {
+  return api(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
@@ -331,7 +543,7 @@ async function saveEdit(msg) {
     const v = $(f).value;
     body[f] = v === "" ? null : Number(v);
   });
-  const res = await fetch("/heats/" + encodeURIComponent(name), {
+  const res = await api("/heats/" + encodeURIComponent(name), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
@@ -353,12 +565,34 @@ $("delete-btn").addEventListener("click", async () => {
   const name = editingHeat;
   if (!confirm("Delete heat " + name + " and all its events? This cannot be undone.")) return;
   const msg = $("msg");
-  const res = await fetch("/heats/" + encodeURIComponent(name), { method: "DELETE" });
+  const res = await api("/heats/" + encodeURIComponent(name), { method: "DELETE" });
   if (await showResult(res, msg, "Deleted " + name)) {
     endEdit();
     loadHeats();
     loadSummary();
   }
+});
+
+$("select-all").addEventListener("change", e => {
+  currentHeats.forEach(h => {
+    if (e.target.checked) selected.add(h.heat_no); else selected.delete(h.heat_no);
+  });
+  rowBoxes.forEach(pair => { pair[1].checked = selected.has(pair[0]); });
+  renderTotals();
+});
+
+$("export").addEventListener("click", async () => {
+  const res = await api("/export.csv?" + filterParams().toString());
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "heats.csv";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 });
 
 $("apply").addEventListener("click", loadHeats);
@@ -403,8 +637,29 @@ $("sample-form").addEventListener("submit", async e => {
   }
 });
 
-loadHeats();
-loadSummary();
+$("login-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const key = $("key-input").value.trim();
+  if (!key) return;
+  storeKey(key, $("key-remember").checked);
+  $("key-input").value = "";
+  showApp();
+  loadHeats();
+  loadSummary();
+});
+
+$("lock").addEventListener("click", () => {
+  clearKey();
+  showLogin("Locked.");
+});
+
+if (getKey() === "") {
+  showLogin("");
+} else {
+  showApp();
+  loadHeats();
+  loadSummary();
+}
 </script>
 </body>
 </html>
