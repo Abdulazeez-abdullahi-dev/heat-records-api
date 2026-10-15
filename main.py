@@ -31,6 +31,8 @@ class Heat(Base):
     electrode_kg = Column(Float)
     tap_weight_t = Column(Float)
     oxygen_nm3 = Column(Float)
+    carbon_kg = Column(Float)
+    lime_kg = Column(Float)
     events = relationship("HeatEvent", back_populates="heat", cascade="all, delete-orphan")
 
 
@@ -90,7 +92,9 @@ class HeatIn(BaseModel):
     power_kwh: Optional[float] = Field(None, ge=0)
     electrode_kg: Optional[float] = Field(None, ge=0)
     tap_weight_t: Optional[float] = Field(None, ge=0, le=300)
-    oxygen_nm3 : Optional[float] = Field(None, ge=0, le=3000)
+    oxygen_nm3: Optional[float] = Field(None, ge=0, le=3000)
+    carbon_kg: Optional[float] = Field(None, ge=0, le=2000)
+    lime_kg: Optional[float] = Field(None, ge=0, le=5000)
 
 
 class HeatUpdate(BaseModel):
@@ -103,6 +107,9 @@ class HeatUpdate(BaseModel):
     electrode_kg: Optional[float] = Field(None, ge=0)
     tap_weight_t: Optional[float] = Field(None, ge=0, le=300)
     oxygen_nm3 : Optional[float] = Field(None, ge=0, le=3000)
+    carbon_kg: Optional[float] = Field(None, ge=0, le=2000)
+    lime_kg: Optional[float] = Field(None, ge=0, le=5000)
+
 
 
 class HeatOut(HeatIn):
@@ -196,11 +203,33 @@ def delete_heat(heat_no: str, db: Session = Depends(get_db)):
 @app.get("/summary")
 def summary(db: Session = Depends(get_db)):
     rows = (
-        db.query(Heat.grade, func.count(Heat.id), func.avg(Heat.tap_temp))
+        db.query(
+            Heat.grade,
+            func.count(Heat.id),
+            func.avg(Heat.tap_temp),
+            func.avg(Heat.tap_weight_t),
+            func.avg(Heat.power_kwh),
+            func.avg(Heat.carbon_kg),
+            func.avg(Heat.oxygen_nm3),
+            func.avg(Heat.lime_kg),
+        )
         .group_by(Heat.grade)
         .all()
     )
+
+    def rnd(value):
+        return round(value, 1) if value is not None else None
+
     return [
-        {"grade": g, "heats": n, "avg_tap_temp": round(t, 1) if t else None}
-        for g, n, t in rows
+        {
+            "grade": g,
+            "heats": n,
+            "avg_tap_temp": rnd(t),
+            "avg_heat_size_t": rnd(w),
+            "avg_power_kwh": rnd(p),
+            "avg_carbon_kg": rnd(c),
+            "avg_oxygen_nm3": rnd(o),
+            "avg_lime_kg": rnd(l),
+        }
+        for g, n, t, w, p, c, o, l in rows
     ]
