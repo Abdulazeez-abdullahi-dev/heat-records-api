@@ -55,6 +55,18 @@ class HeatEvent(Base):
 Base.metadata.create_all(engine)
 
 
+
+def add_missing_columns():
+    with engine.begin() as conn:
+        existing = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(heats)")}
+        for name in ("tap_weight_t", "oxygen_nm3", "lime_kg", "carbon_kg"):
+            if name not in existing:
+                conn.exec_driver_sql(f"ALTER TABLE heats ADD COLUMN {name} FLOAT")
+
+
+add_missing_columns()
+
+
 def get_db():
     db = SessionLocal()
     try:
