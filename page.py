@@ -25,7 +25,7 @@ label{display:flex;flex-direction:column;font-size:.85rem;color:var(--muted);gap
 input,select,button{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
 button{background:var(--accent);color:#fff;border-color:var(--accent);cursor:pointer}
 .scroll{overflow-x:auto}
-table{border-collapse:collapse;width:100%;min-width:1400px}
+table{border-collapse:collapse;width:100%;min-width:1800px}
 th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);font-size:.92rem}
 th{color:var(--muted);font-weight:600}
 .msg{margin-top:10px;min-height:1.2em}
@@ -87,7 +87,7 @@ input[type=checkbox]{padding:0;width:18px;height:18px}
 </div>
 <div class="scroll" style="margin-top:12px">
 <table>
-<thead><tr><th><input type="checkbox" id="select-all" title="Tick all shown heats"></th><th>Heat no</th><th>Furnace</th><th>Grade</th><th>Shift</th><th>Start</th><th>Tap temp</th><th>Size (t)</th><th>Power kWh</th><th>Oxygen Nm&sup3;</th><th>Lime kg</th><th>Carbon kg</th><th>kWh/t</th><th>Carbon kg/t</th><th>Oxygen Nm&sup3;/t</th><th>Lime kg/t</th><th></th></tr></thead>
+<thead><tr><th><input type="checkbox" id="select-all" title="Tick all shown heats"></th><th>Heat no</th><th>Furnace</th><th>Grade</th><th>Shift</th><th>Start</th><th>Tap temp</th><th>Size (t)</th><th>Power kWh</th><th>Oxygen Nm&sup3;</th><th>Lime kg</th><th>Carbon kg</th><th>Electrode kg</th><th>kWh/t</th><th>Carbon kg/t</th><th>Oxygen Nm&sup3;/t</th><th>Lime kg/t</th><th>Electrode kg/t</th><th>Duration (min)</th><th>t/h</th><th></th></tr></thead>
 <tbody id="rows"></tbody>
 </table>
 </div>
@@ -122,6 +122,7 @@ input[type=checkbox]{padding:0;width:18px;height:18px}
 <label>Grade<input id="grade"></label>
 <label>Shift<input id="shift" size="4"></label>
 <label>Start time<input id="start_time" type="datetime-local"></label>
+<label>End time<input id="end_time" type="datetime-local"></label>
 </div>
 <div class="row" style="margin-top:10px">
 <label>Tap temp (&deg;C)<input id="tap_temp" type="number" step="any"></label>
@@ -130,6 +131,7 @@ input[type=checkbox]{padding:0;width:18px;height:18px}
 <label>Oxygen (Nm&sup3;)<input id="oxygen_nm3" type="number" step="any"></label>
 <label>Lime (kg)<input id="lime_kg" type="number" step="any"></label>
 <label>Carbon injection (kg)<input id="carbon_kg" type="number" step="any"></label>
+<label>Electrode (kg)<input id="electrode_kg" type="number" step="any"></label>
 <button type="submit" id="save-btn">Save heat</button>
 <button type="button" id="cancel-edit" style="display:none;background:transparent;color:var(--text);border-color:var(--line)">Cancel</button>
 <button type="button" id="delete-btn" style="display:none;background:var(--bad);border-color:var(--bad)">Delete heat</button>
@@ -214,7 +216,8 @@ const TOTAL_FIELDS = [
   ["power_kwh", "Power", "kWh"],
   ["oxygen_nm3", "Oxygen", "Nm\u00b3"],
   ["carbon_kg", "Carbon injection", "kg"],
-  ["lime_kg", "Lime", "kg"]
+  ["lime_kg", "Lime", "kg"],
+  ["electrode_kg", "Electrode", "kg"]
 ];
 
 function fmt(value, digits) {
@@ -263,10 +266,39 @@ function renderTotals() {
       both.length ? fmt(used / tonnes, 2) + " " + f[2] + "/t" : "n/a",
       both.length + " of " + chosen.length);
   });
+  const timed = chosen.filter(h => durationMin(h) != null);
+  const totalMin = sumOf(timed, h => durationMin(h));
+  addTotalRow(body, "Heat duration (total)",
+    timed.length ? fmt(totalMin, 0) + " min" : "n/a", "", timed.length + " of " + chosen.length);
+  addTotalRow(body, "Heat duration (average)",
+    timed.length ? fmt(totalMin / timed.length, 0) + " min" : "n/a", "", timed.length + " of " + chosen.length);
+  const productive = timed.filter(h => h.tap_weight_t != null && h.tap_weight_t > 0);
+  const hours = sumOf(productive, h => durationMin(h)) / 60;
+  addTotalRow(body, "Productivity",
+    productive.length ? fmt(sumOf(productive, h => h.tap_weight_t) / hours, 1) + " t/h" : "n/a",
+    "", productive.length + " of " + chosen.length);
 }
 
 function updateSelectAll() {
   $("select-all").checked = currentHeats.length > 0 && currentHeats.every(h => selected.has(h.heat_no));
+}
+
+function durationMin(h) {
+  if (!h.start_time || !h.end_time) return null;
+  const minutes = (new Date(h.end_time) - new Date(h.start_time)) / 60000;
+  return minutes > 0 ? Math.round(minutes) : null;
+}
+
+function tonnesPerHour(h) {
+  const minutes = durationMin(h);
+  if (minutes == null || h.tap_weight_t == null || h.tap_weight_t <= 0) return null;
+  return Math.round(h.tap_weight_t / (minutes / 60) * 10) / 10;
+}
+
+function endBeforeStart() {
+  const start = $("start_time").value;
+  const end = $("end_time").value;
+  return Boolean(start && end && new Date(end) <= new Date(start));
 }
 
 function perTonne(h, field) {
@@ -303,8 +335,9 @@ async function loadHeats() {
     boxCell.appendChild(box);
     tr.appendChild(boxCell);
     const start = h.start_time ? h.start_time.replace("T", " ") : "";
-    [h.heat_no, h.furnace, h.grade, h.shift, start, h.tap_temp, h.tap_weight_t, h.power_kwh, h.oxygen_nm3, h.lime_kg, h.carbon_kg,
-     perTonne(h, "power_kwh"), perTonne(h, "carbon_kg"), perTonne(h, "oxygen_nm3"), perTonne(h, "lime_kg")]
+    [h.heat_no, h.furnace, h.grade, h.shift, start, h.tap_temp, h.tap_weight_t, h.power_kwh, h.oxygen_nm3, h.lime_kg, h.carbon_kg, h.electrode_kg,
+     perTonne(h, "power_kwh"), perTonne(h, "carbon_kg"), perTonne(h, "oxygen_nm3"), perTonne(h, "lime_kg"),
+     perTonne(h, "electrode_kg"), durationMin(h), tonnesPerHour(h)]
       .forEach(v => tr.appendChild(cell(v)));
     const editCell = document.createElement("td");
     const editBtn = document.createElement("button");
@@ -407,14 +440,18 @@ const AVERAGES = [
   ["avg_power_kwh", "Power", " kWh"],
   ["avg_carbon_kg", "Carbon injection", " kg"],
   ["avg_oxygen_nm3", "Oxygen", " Nm\u00b3"],
-  ["avg_lime_kg", "Lime", " kg"]
+  ["avg_lime_kg", "Lime", " kg"],
+  ["avg_electrode_kg", "Electrode", " kg"],
+  ["avg_duration_min", "Heat duration", " min"],
+  ["tonnes_per_hour", "Productivity", " t/h"]
 ];
 
 const PER_TONNE = [
   ["power_kwh_per_t", "Power", " kWh/t"],
   ["carbon_kg_per_t", "Carbon injection", " kg/t"],
   ["oxygen_nm3_per_t", "Oxygen", " Nm\u00b3/t"],
-  ["lime_kg_per_t", "Lime", " kg/t"]
+  ["lime_kg_per_t", "Lime", " kg/t"],
+  ["electrode_kg_per_t", "Electrode", " kg/t"]
 ];
 
 function addGroup(card, title) {
@@ -501,7 +538,7 @@ async function postJson(url, body) {
 }
 
 let editingHeat = null;
-const NUM_FIELDS = ["tap_temp", "tap_weight_t", "power_kwh", "oxygen_nm3", "lime_kg", "carbon_kg"];
+const NUM_FIELDS = ["tap_temp", "tap_weight_t", "power_kwh", "oxygen_nm3", "lime_kg", "carbon_kg", "electrode_kg"];
 
 function startEdit(h) {
   editingHeat = h.heat_no;
@@ -512,6 +549,7 @@ function startEdit(h) {
   $("grade").value = h.grade || "";
   $("shift").value = h.shift || "";
   $("start_time").value = h.start_time ? h.start_time.slice(0, 16) : "";
+  $("end_time").value = h.end_time ? h.end_time.slice(0, 16) : "";
   NUM_FIELDS.forEach(f => { $(f).value = h[f] == null ? "" : h[f]; });
   $("form-title").textContent = "Edit heat " + h.heat_no;
   $("save-btn").textContent = "Update heat";
@@ -537,7 +575,8 @@ async function saveEdit(msg) {
   const body = {
     grade: $("grade").value.trim() || null,
     shift: $("shift").value.trim() || null,
-    start_time: $("start_time").value || null
+    start_time: $("start_time").value || null,
+    end_time: $("end_time").value || null
   };
   NUM_FIELDS.forEach(f => {
     const v = $(f).value;
@@ -601,6 +640,11 @@ $("form").addEventListener("submit", async e => {
   e.preventDefault();
   const msg = $("msg");
   msg.textContent = "";
+  if (endBeforeStart()) {
+    msg.textContent = "End time must be after the start time.";
+    msg.className = "msg bad";
+    return;
+  }
   if (editingHeat) {
     await saveEdit(msg);
     return;
@@ -611,9 +655,11 @@ $("form").addEventListener("submit", async e => {
   const shift = $("shift").value.trim();
   if (shift) body.shift = shift;
   if ($("start_time").value) body.start_time = $("start_time").value;
+  if ($("end_time").value) body.end_time = $("end_time").value;
   addNumbers(body, [
     ["tap_temp", "tap_temp"], ["tap_weight_t", "tap_weight_t"], ["power_kwh", "power_kwh"],
-    ["oxygen_nm3", "oxygen_nm3"], ["lime_kg", "lime_kg"], ["carbon_kg", "carbon_kg"]
+    ["oxygen_nm3", "oxygen_nm3"], ["lime_kg", "lime_kg"], ["carbon_kg", "carbon_kg"],
+    ["electrode_kg", "electrode_kg"]
   ]);
   const res = await postJson("/heats", body);
   if (await showResult(res, msg, "Saved " + body.heat_no)) {

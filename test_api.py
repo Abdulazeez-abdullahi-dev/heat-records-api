@@ -181,6 +181,28 @@ def test_heat_without_a_size_is_left_out_of_per_tonne(client):
     assert s["power_kwh_per_t"] == pytest.approx(120000 / 360, abs=0.01)  # so not in per tonne
 
 
+def test_summary_time_and_electrode(client):
+    first = heat("H1", start_time="2026-10-01T06:00:00", end_time="2026-10-01T07:00:00",
+                 tap_weight_t=120, electrode_kg=60)
+    second = heat("H2", start_time="2026-10-01T08:00:00", end_time="2026-10-01T09:30:00",
+                  tap_weight_t=120, electrode_kg=90)
+    assert client.post("/heats", json=first).status_code == 201
+    assert client.post("/heats", json=second).status_code == 201
+    s = entry_for(client, "SAE1018")
+    assert s["avg_duration_min"] == pytest.approx(75)
+    assert s["tonnes_per_hour"] == pytest.approx(96, abs=0.1)      # 240 t in 2.5 hours
+    assert s["avg_electrode_kg"] == pytest.approx(75)
+    assert s["electrode_kg_per_t"] == pytest.approx(150 / 240, abs=0.01)
+
+
+def test_heat_ending_before_it_starts_is_left_out_of_durations(client):
+    body = heat("H1", start_time="2026-10-01T08:00:00", end_time="2026-10-01T07:00:00", tap_weight_t=120)
+    assert client.post("/heats", json=body).status_code == 201
+    s = entry_for(client, "SAE1018")
+    assert s["avg_duration_min"] is None
+    assert s["tonnes_per_hour"] is None
+
+
 # ---------- CSV export ----------
 
 def test_csv_export(client):
