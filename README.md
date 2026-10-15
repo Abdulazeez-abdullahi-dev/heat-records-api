@@ -1,5 +1,7 @@
 # Heat Records API
 
+![tests](https://github.com/Abdulazeez-abdullahi-dev/heat-records-api/actions/workflows/tests.yml/badge.svg)
+
 A REST API for storing and querying steelmaking heat records (EAF and LRF), built with Python, FastAPI and SQLite. It has a web page for browsing, charting, editing and exporting heats, is protected by an API key, and is packaged as a downloadable Windows app.
 
 ![Heat Records web page](screenshot.png)
@@ -24,6 +26,7 @@ The API stores heats (one batch of steel) and the events recorded during each he
 - CSV export of the heats shown (opens in Excel)
 - API-key protection: the key is created on first start and saved in `api_key.txt`
 - Older databases are upgraded automatically when the app starts
+- 21 automated tests, run on GitHub for every push
 - Interactive documentation at `/docs`
 - Packaged as a Windows app (`HeatRecordsAPI.exe`) that starts the server and opens the web page
 
@@ -61,6 +64,15 @@ pyinstaller --noconfirm --onefile --name HeatRecordsAPI --collect-submodules uvi
 ```
 
 The result is `dist\HeatRecordsAPI.exe`.
+
+## Run the tests
+
+```
+pip install -r requirements-dev.txt
+python -m pytest -v
+```
+
+The tests use a temporary in-memory database and their own test key, so they never touch your real data or your `api_key.txt`.
 
 ## Endpoints
 
@@ -118,4 +130,3 @@ I built this as a beginner, working through it step by step. I learned how an AP
 
 - Move from SQLite to PostgreSQL
 - Serve over HTTPS for use on a network
-- Add automated tests
