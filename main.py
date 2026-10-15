@@ -255,6 +255,7 @@ def summary(db: Session = Depends(get_db)):
         db.query(
             Heat.grade,
             func.count(Heat.id),
+            func.sum(Heat.tap_weight_t),
             func.avg(Heat.tap_temp),
             func.avg(Heat.tap_weight_t),
             func.avg(Heat.power_kwh),
@@ -266,13 +267,32 @@ def summary(db: Session = Depends(get_db)):
         .all()
     )
 
-    def rnd(value):
-        return round(value, 1) if value is not None else None
+    # Per tonne = total used / total tonnes, counting only heats that have both values
+    per_tonne_columns = {
+        "power_kwh_per_t": Heat.power_kwh,
+        "carbon_kg_per_t": Heat.carbon_kg,
+        "oxygen_nm3_per_t": Heat.oxygen_nm3,
+        "lime_kg_per_t": Heat.lime_kg,
+    }
+    per_tonne = {}
+    for key, column in per_tonne_columns.items():
+        pairs = (
+            db.query(Heat.grade, func.sum(column), func.sum(Heat.tap_weight_t))
+            .filter(column.isnot(None), Heat.tap_weight_t.isnot(None), Heat.tap_weight_t > 0)
+            .group_by(Heat.grade)
+            .all()
+        )
+        per_tonne[key] = {g: used / tonnes for g, used, tonnes in pairs}
 
-    return [
-        {
+    def rnd(value, digits=1):
+        return round(value, digits) if value is not None else None
+
+    result = []
+    for g, n, total, t, w, p, c, o, l in rows:
+        entry = {
             "grade": g,
             "heats": n,
+            "total_heat_size_t": rnd(total),
             "avg_tap_temp": rnd(t),
             "avg_heat_size_t": rnd(w),
             "avg_power_kwh": rnd(p),
@@ -280,8 +300,11 @@ def summary(db: Session = Depends(get_db)):
             "avg_oxygen_nm3": rnd(o),
             "avg_lime_kg": rnd(l),
         }
-        for g, n, t, w, p, c, o, l in rows
-    ]
+        for key, values in per_tonne.items():
+            entry[key] = rnd(values.get(g), 2)
+        result.append(entry)
+    return result
+
 
 @app.get("/export.csv")
 def export_csv(
