@@ -82,6 +82,8 @@ input[type=checkbox]{padding:0;width:18px;height:18px}
 <label>Grade
 <input id="f-grade" placeholder="e.g. SAE1018">
 </label>
+<label>From<input id="f-from" type="date"></label>
+<label>To<input id="f-to" type="date"></label>
 <button id="apply" type="button">Filter</button>
 <button id="export" type="button" style="background:transparent;color:var(--text);border-color:var(--line)">Download CSV</button>
 </div>
@@ -106,8 +108,38 @@ input[type=checkbox]{padding:0;width:18px;height:18px}
 </section>
 
 <section class="card">
-<h2>Tap temperature by heat</h2>
-<p class="note">Follows the furnace and grade filter above. EAF and LRF are drawn as separate lines. Hover over a dot to see the heat.</p>
+<h2>Compare groups</h2>
+<p class="note">Compares groups using the ticked heats, or all heats shown. Per tonne = total used &divide; total heat size, using only heats that have both values.</p>
+<div class="row">
+<label>Group by
+<select id="group-by"><option value="shift">Shift</option><option value="grade">Grade</option><option value="furnace">Furnace</option></select>
+</label>
+</div>
+<div class="scroll" style="margin-top:12px">
+<table class="totals" style="min-width:900px">
+<thead id="groups-head"></thead>
+<tbody id="groups"></tbody>
+</table>
+</div>
+</section>
+
+<section class="card">
+<h2>Trend by heat</h2>
+<div class="row" style="margin-bottom:8px">
+<label>Metric
+<select id="metric">
+<option value="tap_temp">Tap temperature (&deg;C)</option>
+<option value="kwh_t">Power (kWh/t)</option>
+<option value="electrode_t">Electrode (kg/t)</option>
+<option value="carbon_t">Carbon injection (kg/t)</option>
+<option value="oxygen_t">Oxygen (Nm&sup3;/t)</option>
+<option value="lime_t">Lime (kg/t)</option>
+<option value="tph">Productivity (t/h)</option>
+<option value="duration">Heat duration (min)</option>
+</select>
+</label>
+</div>
+<p class="note">Follows the filters above. EAF and LRF are drawn as separate lines. Hover over a dot to see the heat.</p>
 <div id="chart"></div>
 </section>
 
@@ -239,7 +271,58 @@ function plural(n, word) {
   return n + " " + word + (n === 1 ? "" : "s");
 }
 
+function ratioOf(list, field) {
+  const both = list.filter(h => h[field] != null && h.tap_weight_t != null && h.tap_weight_t > 0);
+  if (both.length === 0) return null;
+  return sumOf(both, h => h[field]) / sumOf(both, h => h.tap_weight_t);
+}
+
+function groupFigures(list) {
+  const sized = list.filter(h => h.tap_weight_t != null);
+  const timed = list.filter(h => durationMin(h) != null);
+  const productive = timed.filter(h => h.tap_weight_t != null && h.tap_weight_t > 0);
+  const hours = sumOf(productive, h => durationMin(h)) / 60;
+  const cells = [String(list.length), sized.length ? fmt(sumOf(sized, h => h.tap_weight_t), 1) : "n/a"];
+  ["power_kwh", "carbon_kg", "oxygen_nm3", "lime_kg", "electrode_kg"].forEach(f => {
+    const r = ratioOf(list, f);
+    cells.push(r == null ? "n/a" : fmt(r, 2));
+  });
+  cells.push(timed.length ? fmt(sumOf(timed, h => durationMin(h)) / timed.length, 0) : "n/a");
+  cells.push(productive.length ? fmt(sumOf(productive, h => h.tap_weight_t) / hours, 1) : "n/a");
+  return cells;
+}
+
+function renderGroups() {
+  const by = $("group-by").value;
+  const chosen = selected.size > 0 ? currentHeats.filter(h => selected.has(h.heat_no)) : currentHeats;
+  const head = $("groups-head");
+  const body = $("groups");
+  head.replaceChildren();
+  body.replaceChildren();
+  const names = { shift: "Shift", grade: "Grade", furnace: "Furnace" };
+  const headRow = document.createElement("tr");
+  [names[by], "Heats", "Total size (t)", "kWh/t", "Carbon kg/t", "Oxygen Nm\u00b3/t", "Lime kg/t",
+    "Electrode kg/t", "Avg duration (min)", "t/h"].forEach(text => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headRow.appendChild(th);
+  });
+  head.appendChild(headRow);
+  const groups = new Map();
+  chosen.forEach(h => {
+    const key = h[by] == null || h[by] === "" ? "(none)" : h[by];
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(h);
+  });
+  Array.from(groups.keys()).sort().forEach(key => {
+    const tr = document.createElement("tr");
+    [key].concat(groupFigures(groups.get(key))).forEach(v => tr.appendChild(cell(v)));
+    body.appendChild(tr);
+  });
+}
+
 function renderTotals() {
+  renderGroups();
   const picked = selected.size > 0;
   const chosen = picked ? currentHeats.filter(h => selected.has(h.heat_no)) : currentHeats;
   const body = $("totals");
@@ -310,11 +393,15 @@ function filterParams() {
   const params = new URLSearchParams();
   if ($("f-furnace").value) params.set("furnace", $("f-furnace").value);
   if ($("f-grade").value.trim()) params.set("grade", $("f-grade").value.trim());
+  if ($("f-from").value) params.set("date_from", $("f-from").value + "T00:00:00");
+  if ($("f-to").value) params.set("date_to", $("f-to").value + "T23:59:59");
   return params;
 }
 
 async function loadHeats() {
-  const res = await api("/heats?" + filterParams().toString());
+  const listParams = filterParams();
+  listParams.set("limit", "500");
+  const res = await api("/heats?" + listParams.toString());
   if (!res.ok) return;
   const heats = await res.json();
   const body = $("rows");
@@ -348,7 +435,8 @@ async function loadHeats() {
     tr.appendChild(editCell);
     body.appendChild(tr);
   });
-  $("count").textContent = heats.length + (heats.length === 1 ? " heat" : " heats");
+  $("count").textContent = heats.length + (heats.length === 1 ? " heat" : " heats") +
+    (heats.length >= 500 ? " (the newest 500 are shown; narrow the dates to see others)" : "");
   currentHeats = heats;
   Array.from(selected).forEach(n => {
     if (!heats.some(h => h.heat_no === n)) selected.delete(n);
@@ -367,36 +455,51 @@ function svgEl(name, attrs, text) {
   return el;
 }
 
+const METRIC_DEFS = {
+  tap_temp: ["Tap temp (\u00b0C)", h => h.tap_temp],
+  kwh_t: ["Power (kWh/t)", h => perTonne(h, "power_kwh")],
+  electrode_t: ["Electrode (kg/t)", h => perTonne(h, "electrode_kg")],
+  carbon_t: ["Carbon injection (kg/t)", h => perTonne(h, "carbon_kg")],
+  oxygen_t: ["Oxygen (Nm\u00b3/t)", h => perTonne(h, "oxygen_nm3")],
+  lime_t: ["Lime (kg/t)", h => perTonne(h, "lime_kg")],
+  tph: ["Productivity (t/h)", h => tonnesPerHour(h)],
+  duration: ["Heat duration (min)", h => durationMin(h)]
+};
+
 function drawChart(heats) {
   const box = $("chart");
   box.replaceChildren();
+  const metric = METRIC_DEFS[$("metric").value] || METRIC_DEFS.tap_temp;
+  const label = metric[0];
+  const getter = metric[1];
   const pts = heats
-    .filter(h => h.tap_temp != null && h.start_time)
+    .filter(h => getter(h) != null && h.start_time)
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
   if (pts.length < 2) {
-    box.textContent = "Add at least two heats with a start time and tap temperature to see the chart.";
+    box.textContent = "Not enough heats with a start time and a value for " + label + " (it needs at least two).";
     return;
   }
   const W = 800, H = 280, L = 56, R = 16, T = 16, B = 44;
-  const temps = pts.map(p => p.tap_temp);
-  let lo = Math.min(...temps), hi = Math.max(...temps);
-  if (hi - lo < 20) {
-    const mid = (hi + lo) / 2;
-    lo = mid - 10;
-    hi = mid + 10;
+  const values = pts.map(getter);
+  let lo = Math.min(...values), hi = Math.max(...values);
+  if (hi === lo) {
+    lo -= 1;
+    hi += 1;
   }
   const pad = (hi - lo) * 0.1;
   lo -= pad;
   hi += pad;
+  const range = hi - lo;
   const x = i => L + (W - L - R) * (i / (pts.length - 1));
   const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
-  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": "Tap temperature by heat" });
+  const svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, role: "img", "aria-label": label + " by heat" });
   svg.setAttribute("class", "chart");
   for (let i = 0; i <= 4; i++) {
-    const v = lo + (hi - lo) * i / 4;
+    const v = lo + range * i / 4;
     const yy = y(v);
     svg.appendChild(svgEl("line", { x1: L, x2: W - R, y1: yy, y2: yy, class: "grid" }));
-    svg.appendChild(svgEl("text", { x: L - 8, y: yy + 4, class: "tick", "text-anchor": "end" }, Math.round(v)));
+    svg.appendChild(svgEl("text", { x: L - 8, y: yy + 4, class: "tick", "text-anchor": "end" },
+      range >= 20 ? Math.round(v) : Math.round(v * 100) / 100));
   }
   const present = [];
   [["EAF", "line", "dot"], ["LRF", "line2", "dot2"]].forEach(sr => {
@@ -405,12 +508,12 @@ function drawChart(heats) {
     if (idx.length === 0) return;
     present.push(sr[0]);
     if (idx.length > 1) {
-      const d = idx.map((i, k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + y(pts[i].tap_temp).toFixed(1)).join(" ");
+      const d = idx.map((i, k) => (k ? "L" : "M") + x(i).toFixed(1) + " " + y(values[i]).toFixed(1)).join(" ");
       svg.appendChild(svgEl("path", { d: d, class: sr[1] }));
     }
     idx.forEach(i => {
-      const dot = svgEl("circle", { cx: x(i), cy: y(pts[i].tap_temp), r: 4, class: sr[2] });
-      dot.appendChild(svgEl("title", {}, pts[i].heat_no + " (" + sr[0] + "): " + pts[i].tap_temp + " \u00b0C"));
+      const dot = svgEl("circle", { cx: x(i), cy: y(values[i]), r: 4, class: sr[2] });
+      dot.appendChild(svgEl("title", {}, pts[i].heat_no + " (" + sr[0] + "): " + values[i] + "  " + label));
       svg.appendChild(dot);
     });
   });
@@ -420,7 +523,7 @@ function drawChart(heats) {
       svg.appendChild(svgEl("text", { x: x(i), y: H - B + 18, class: "tick", "text-anchor": "middle" }, p.heat_no));
     }
   });
-  svg.appendChild(svgEl("text", { x: 14, y: H / 2, class: "tick", "text-anchor": "middle", transform: "rotate(-90 14 " + (H / 2) + ")" }, "Tap temp (\u00b0C)"));
+  svg.appendChild(svgEl("text", { x: 14, y: H / 2, class: "tick", "text-anchor": "middle", transform: "rotate(-90 14 " + (H / 2) + ")" }, label));
   const legend = document.createElement("div");
   legend.className = "legend";
   present.forEach(name => {
@@ -633,6 +736,9 @@ $("export").addEventListener("click", async () => {
   link.remove();
   URL.revokeObjectURL(url);
 });
+
+$("metric").addEventListener("change", () => drawChart(currentHeats));
+$("group-by").addEventListener("change", renderGroups);
 
 $("apply").addEventListener("click", loadHeats);
 
